@@ -23,6 +23,11 @@ import {
 } from './utils/cdrEngine';
 import { RawCDRRow, CDRRecord, ShiftFilter, ColumnMapping } from './types';
 import { 
+  saveSettingsToFirebase, 
+  loadSettingsFromFirebase, 
+  subscribeToFirebaseSettings 
+} from './lib/firebase';
+import { 
   Activity, 
   Layers, 
   UserCheck, 
@@ -48,6 +53,29 @@ export default function App() {
   const [selectedHours, setSelectedHours] = useState<number[]>(() => Array.from({ length: 24 }, (_, i) => i));
   const [excludedHours, setExcludedHours] = useState<number[]>([]);
   const [excludedExtensions, setExcludedExtensions] = useState<string[]>([]);
+
+  // Real-time synchronization with Firebase Firestore for settings
+  useEffect(() => {
+    // Initial load from Firebase
+    loadSettingsFromFirebase().then(saved => {
+      if (saved) {
+        if (Array.isArray(saved.excludedExtensions)) {
+          setExcludedExtensions(saved.excludedExtensions);
+        }
+      }
+    });
+
+    // Real-time listener
+    const unsubscribe = subscribeToFirebaseSettings((settings) => {
+      if (settings && Array.isArray(settings.excludedExtensions)) {
+        setExcludedExtensions(settings.excludedExtensions);
+      }
+    });
+
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
 
   // 3. Modals State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -156,12 +184,37 @@ export default function App() {
       const exists = prev.includes(ext);
       const next = exists ? prev.filter(e => e !== ext) : [...prev, ext];
       setToastMessage(exists ? `Extensión ${ext} re-activada.` : `Extensión ${ext} excluida de las métricas.`);
+      saveSettingsToFirebase({
+        excludedExtensions: next,
+        lunchStart: '12:00',
+        lunchEnd: '14:00',
+        excludeLunch: false,
+        minDeadTimeMinutes: 5
+      });
       return next;
+    });
+  };
+
+  const handleSetExcludedExtensions = (exts: string[]) => {
+    setExcludedExtensions(exts);
+    saveSettingsToFirebase({
+      excludedExtensions: exts,
+      lunchStart: '12:00',
+      lunchEnd: '14:00',
+      excludeLunch: false,
+      minDeadTimeMinutes: 5
     });
   };
 
   const handleClearExcludedExtensions = () => {
     setExcludedExtensions([]);
+    saveSettingsToFirebase({
+      excludedExtensions: [],
+      lunchStart: '12:00',
+      lunchEnd: '14:00',
+      excludeLunch: false,
+      minDeadTimeMinutes: 5
+    });
     setSelectedDates([]);
     setExcludedHours([]);
     setSelectedHours(Array.from({ length: 24 }, (_, i) => i));
@@ -169,7 +222,17 @@ export default function App() {
   };
 
   const handleRemoveExcluded = (ext: string) => {
-    setExcludedExtensions(prev => prev.filter(e => e !== ext));
+    setExcludedExtensions(prev => {
+      const next = prev.filter(e => e !== ext);
+      saveSettingsToFirebase({
+        excludedExtensions: next,
+        lunchStart: '12:00',
+        lunchEnd: '14:00',
+        excludeLunch: false,
+        minDeadTimeMinutes: 5
+      });
+      return next;
+    });
     setToastMessage(`Extensión ${ext} re-activada.`);
   };
 
@@ -425,7 +488,7 @@ export default function App() {
         availableExtensions={availableExtensions}
         excludedExtensions={excludedExtensions}
         onToggleExclude={handleToggleExcludeExtension}
-        onSetExcluded={(exts) => setExcludedExtensions(exts)}
+        onSetExcluded={handleSetExcludedExtensions}
         onClearExcluded={handleClearExcludedExtensions}
         cdrRecords={cdrRecords}
       />

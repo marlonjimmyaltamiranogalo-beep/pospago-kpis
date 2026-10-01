@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Permitir lectura y escritura a las configuraciones globales, exclusiones guardadas y datasets de CDR
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
